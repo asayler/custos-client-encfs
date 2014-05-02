@@ -64,7 +64,6 @@ typedef struct timespec timespec_t;
 typedef struct enc_fhs {
     uint64_t encFH;
     uint64_t clearFH;
-    char     clearPath[PATHBUFSIZE];
     char     dirty;
     char     padding[7];
 } enc_fhs_t;
@@ -347,7 +346,14 @@ static enc_fhs_t* createFilePair(const char* encPath, int flags, mode_t mode) {
         return NULL;
     }
     fhs->clearFH = ret;
-    strncpy(fhs->clearPath, tmpPath, sizeof(tmpPath));
+
+    /* Unlink tmpPath */
+    ret = unlink(tmpPath);
+    if(ret < 0) {
+        fprintf(stderr, "ERROR createFilePairFile: unlink failed\n");
+        perror("ERROR createFilePair");
+        return NULL;
+    }
 
     /* Return */
     return fhs;
@@ -405,7 +411,14 @@ static enc_fhs_t* openFilePair(const char* encPath, int flags) {
         return NULL;
     }
     fhs->clearFH = ret;
-    strncpy(fhs->clearPath, tmpPath, sizeof(tmpPath));
+
+    /* Unlink tmpPath */
+    ret = unlink(tmpPath);
+    if(ret < 0) {
+        fprintf(stderr, "ERROR createFilePairFile: unlink failed\n");
+        perror("ERROR createFilePair");
+        return NULL;
+    }
 
     /* Return */
     return fhs;
@@ -434,25 +447,6 @@ static int closeFilePair(enc_fhs_t* fhs) {
     }
 
     free(fhs);
-
-    return RETURN_SUCCESS;
-
-}
-
-static int removeFile(const char* filePath) {
-
-    int ret;
-
-    fprintf(stderr, "DEBUG removeFile called\n");
-
-    fprintf(stderr, "INFO removeFile: function called on %s\n", filePath);
-
-    ret = unlink(filePath);
-    if(ret < 0) {
-        fprintf(stderr, "ERROR removeFile: unlink failed\n");
-        perror("ERROR removeTemp");
-        return -errno;
-    }
 
     return RETURN_SUCCESS;
 
@@ -890,12 +884,6 @@ static int enc_getattr(const char* path, stat_t* stbuf) {
         stbuf->st_size = stTemp.st_size;
         stbuf->st_blksize = stTemp.st_blksize;
         stbuf->st_blocks = stTemp.st_blocks;
-
-        ret = removeFile(fhs->clearPath);
-        if(ret < 0) {
-            fprintf(stderr, "ERROR enc_getattr: removeFile failed\n");
-            return ret;
-        }
 
         ret = closeFilePair(fhs);
         if(ret < 0) {
@@ -1347,12 +1335,6 @@ static int enc_truncate(const char* path, off_t size) {
         return ret;
     }
 
-    ret = removeFile(fhs->clearPath);
-    if(ret < 0) {
-        fprintf(stderr, "ERROR enc_truncate: removeFile failed\n");
-        return ret;
-    }
-
     ret = closeFilePair(fhs);
     if(ret < 0) {
         fprintf(stderr, "ERROR enc_getattr: closeFilePair failed\n");
@@ -1665,12 +1647,6 @@ static int enc_release(const char* path, fuse_file_info_t* fi) {
             return ret;
         }
 
-    }
-
-    ret = removeFile(fhs->clearPath);
-    if(ret < 0) {
-        fprintf(stderr, "ERROR enc_release: removeFile failed\n");
-        return ret;
     }
 
     ret = closeFilePair(fhs);
