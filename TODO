@@ -3,15 +3,18 @@ TODO
 * 2013-04-28 - ANDY - Add proper memory clean-up on error and errno
                       pass through in fuseenc_fh.c
 
-* 2013-05-02 - ANDY - Deal with hiding decrypted temp files from stat, etc
-
-* 2013-05-02 - ANDY - Deal with multi-open files
-
 * 2013-05-04 - ANDY - Move curl_global_init call to FUSE init
 
-* 2013-05-04 - ANDY - Make code thread safe for FUSE (until then, use -s option)
+* 2013-05-04 - ANDY - Make code thread safe for FUSE (until then, use -s option) - DONE?
 
 DONE
+
+
+* 2013-05-02 - ANDY - Deal with hiding decrypted temp files from stat, etc
+  2014-05-02 - ANDY - COMPLETED (via mkstemp)
+
+* 2013-05-02 - ANDY - Deal with multi-open files
+  2014-05-02 - ANDY - COMPLETED (via mkstemp)
 
 * 2013-04-28 - ANDY - Implement non-FH functions (truncate, etc)
   2013-05-02 - ANDY - COMPLETED
