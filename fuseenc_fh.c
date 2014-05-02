@@ -58,7 +58,7 @@ typedef struct timespec timespec_t;
 #define PATHBUFSIZE 1024
 #define PATHDELIMINATOR '/'
 #define NULLTERM '\0'
-#define TEMPNAME_PRE  "._"
+#define TMPNAME_PRE  "._"
 #define KEYBUFSIZE 1024
 
 typedef struct enc_fhs {
@@ -288,8 +288,8 @@ static int buildTmpPath(const char* path, char* tmpPath, size_t tmpSize) {
     *pFileName = NULLTERM;
 
     /* Build Tmp Path */
-    length = snprintf(tmpPath, tmpSize, "%s%c%s%sXXXXXX",
-                      buf, PATHDELIMINATOR, TMPNAME_PRE, (pFileName + 1), TMPNAME_POST);
+    length = snprintf(tmpPath, tmpSize, "%s%c%s%s_XXXXXX",
+                      buf, PATHDELIMINATOR, TMPNAME_PRE, (pFileName + 1));
     if(length > (tmpSize - 1)) {
         fprintf(stderr, "ERROR buildTmpPath: Overflowed tmpPath\n");
         return -ENAMETOOLONG;
@@ -848,7 +848,6 @@ static int enc_getattr(const char* path, stat_t* stbuf) {
 
     int ret;
     char fullPath[PATHBUFSIZE];
-    char tempPath[PATHBUFSIZE];
     enc_fhs_t* fhs;
     stat_t stTemp;
 
@@ -868,15 +867,7 @@ static int enc_getattr(const char* path, stat_t* stbuf) {
 
     if(S_ISREG(stbuf->st_mode)) {
 
-        ret = buildTempPath(fullPath, tempPath, sizeof(tempPath));
-        if(ret < 0) {
-            fprintf(stderr, "ERROR enc_getattr: buildTempPath failed\n");
-            return ret;
-        }
-
-        // TODO:  Make re-entrant/parallel safe - currently overwrites/erases temp
-
-        fhs = openFilePair(fullPath, tempPath, O_RDONLY);
+        fhs = openFilePair(fullPath, O_RDONLY);
         if(!fhs) {
             fprintf(stderr, "ERROR enc_getattr: openFilePair failed\n");
             return RETURN_FAILURE;
@@ -895,22 +886,23 @@ static int enc_getattr(const char* path, stat_t* stbuf) {
             return -errno;
         }
 
+        /* Copy over select fields */
+        stbuf->st_size = stTemp.st_size;
+        stbuf->st_blksize = stTemp.st_blksize;
+        stbuf->st_blocks = stTemp.st_blocks;
+
+        ret = removeFile(fhs->clearPath);
+        if(ret < 0) {
+            fprintf(stderr, "ERROR enc_getattr: removeFile failed\n");
+            return ret;
+        }
+
         ret = closeFilePair(fhs);
         if(ret < 0) {
             fprintf(stderr, "ERROR enc_getattr: closeFilePair failed\n");
             return ret;
         }
 
-        /* Copy over select fields */
-        stbuf->st_size = stTemp.st_size;
-        stbuf->st_blksize = stTemp.st_blksize;
-        stbuf->st_blocks = stTemp.st_blocks;
-
-        ret = removeFile(tempPath);
-        if(ret < 0) {
-            fprintf(stderr, "ERROR enc_getattr: removeFile failed\n");
-            return ret;
-        }
     }
 
     return RETURN_SUCCESS;
@@ -1327,7 +1319,6 @@ static int enc_truncate(const char* path, off_t size) {
 
     int ret;
     char fullPath[PATHBUFSIZE];
-    char tempPath[PATHBUFSIZE];
     enc_fhs_t* fhs;
 
     ret = buildPath(path, fullPath, sizeof(fullPath));
@@ -1337,13 +1328,7 @@ static int enc_truncate(const char* path, off_t size) {
     }
     path = NULL;
 
-    ret = buildTempPath(fullPath, tempPath, sizeof(tempPath));
-    if(ret < 0){
-        fprintf(stderr, "ERROR enc_truncate: buildTempPath failed\n");
-        return ret;
-    }
-
-    fhs = openFilePair(fullPath, tempPath, O_RDWR);
+    fhs = openFilePair(fullPath, O_RDWR);
     if(!fhs) {
         fprintf(stderr, "ERROR enc_truncate: openFilePair failed\n");
         return RETURN_FAILURE;
@@ -1362,15 +1347,15 @@ static int enc_truncate(const char* path, off_t size) {
         return ret;
     }
 
-    ret = closeFilePair(fhs);
+    ret = removeFile(fhs->clearPath);
     if(ret < 0) {
-        fprintf(stderr, "ERROR enc_getattr: closeFilePair failed\n");
+        fprintf(stderr, "ERROR enc_truncate: removeFile failed\n");
         return ret;
     }
 
-    ret = removeFile(tempPath);
+    ret = closeFilePair(fhs);
     if(ret < 0) {
-        fprintf(stderr, "ERROR enc_truncate: removeFile failed\n");
+        fprintf(stderr, "ERROR enc_getattr: closeFilePair failed\n");
         return ret;
     }
 
@@ -1428,7 +1413,6 @@ static int enc_create(const char* path, mode_t mode, fuse_file_info_t* fi) {
     int ret;
     enc_fhs_t* fhs;
     char fullPath[PATHBUFSIZE];
-    char tempPath[PATHBUFSIZE];
 
     ret = buildPath(path, fullPath, sizeof(fullPath));
     if(ret < 0){
@@ -1437,13 +1421,7 @@ static int enc_create(const char* path, mode_t mode, fuse_file_info_t* fi) {
     }
     path = NULL;
 
-    ret = buildTempPath(fullPath, tempPath, sizeof(tempPath));
-    if(ret < 0){
-        fprintf(stderr, "ERROR enc_create: buildTempPath failed\n");
-        return ret;
-    }
-
-    fhs = createFilePair(fullPath, tempPath, fi->flags, mode);
+    fhs = createFilePair(fullPath, fi->flags, mode);
     if(!fhs) {
         fprintf(stderr, "ERROR enc_create: createFilePair failed\n");
         return RETURN_FAILURE;
@@ -1467,7 +1445,6 @@ static int enc_open(const char* path, fuse_file_info_t* fi) {
     int ret;
     enc_fhs_t* fhs;
     char fullPath[PATHBUFSIZE];
-    char tempPath[PATHBUFSIZE];
 
     ret = buildPath(path, fullPath, sizeof(fullPath));
     if(ret < 0){
@@ -1476,13 +1453,7 @@ static int enc_open(const char* path, fuse_file_info_t* fi) {
     }
     path = NULL;
 
-    ret = buildTempPath(fullPath, tempPath, sizeof(tempPath));
-    if(ret < 0){
-        fprintf(stderr, "ERROR enc_open: buildTempPath failed\n");
-        return ret;
-    }
-
-    fhs = openFilePair(fullPath, tempPath, fi->flags);
+    fhs = openFilePair(fullPath, fi->flags);
     if(!fhs) {
         fprintf(stderr, "ERROR enc_open: openFilePair failed\n");
         return RETURN_FAILURE;
