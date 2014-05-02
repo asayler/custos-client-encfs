@@ -48,7 +48,7 @@ typedef struct timespec timespec_t;
 
 #define DEBUG
 
-#define TESTKEY "Password"
+#define TESTKEY "MySuperSecretKey"
 
 #define RETURN_FAILURE -1
 #define RETURN_SUCCESS 0
@@ -439,16 +439,18 @@ static int decryptFH(const uint64_t encFH, const uint64_t clearFH) {
     off_t clearOffset;
     FILE* encFP = NULL;
     FILE* clearFP = NULL;
-    char key[KEYBUFSIZE];
+    /* char key[KEYBUFSIZE]; */
+    char* key = NULL;
 
     fprintf(stderr, "DEBUG decryptFH called\n");
 
     /* Get Custos Key */
-    ret = getCustosKey(key, sizeof(key));
-    if(ret  < 0) {
-        fprintf(stderr, "ERROR decryptFH: getCustosKey failed\n");
-        goto CLEANUP_0;
-    }
+    /* ret = getCustosKey(key, sizeof(key)); */
+    /* if(ret  < 0) { */
+    /*     fprintf(stderr, "ERROR decryptFH: getCustosKey failed\n"); */
+    /*     goto CLEANUP_0; */
+    /* } */
+    key = TESTKEY;
 
     /* Save and Rewind Input Offset */
     encOffset = lseek(encFH, 0, SEEK_CUR);
@@ -630,16 +632,18 @@ static int encryptFH(const uint64_t clearFH, const uint64_t encFH) {
     off_t encOffset;
     FILE* clearFP = NULL;
     FILE* encFP = NULL;
-    char key[KEYBUFSIZE];
+    /* char key[KEYBUFSIZE]; */
+    char* key = NULL;
 
     fprintf(stderr, "DEBUG encryptFH called\n");
 
     /* Get Custos Key */
-    ret = getCustosKey(key, sizeof(key));
-    if(ret  < 0) {
-        fprintf(stderr, "ERROR decryptFH: getCustosKey failed\n");
-        goto CLEANUP_0;
-    }
+    /* ret = getCustosKey(key, sizeof(key)); */
+    /* if(ret  < 0) { */
+    /*     fprintf(stderr, "ERROR decryptFH: getCustosKey failed\n"); */
+    /*     goto CLEANUP_0; */
+    /* } */
+    key = TESTKEY;
 
     /* Save and Rewind Input Offset */
     clearOffset = lseek(clearFH, 0, SEEK_CUR);
