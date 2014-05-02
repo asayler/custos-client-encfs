@@ -59,7 +59,6 @@ typedef struct timespec timespec_t;
 #define PATHDELIMINATOR '/'
 #define NULLTERM '\0'
 #define TEMPNAME_PRE  "._"
-#define TEMPNAME_POST ".decrypt"
 #define KEYBUFSIZE 1024
 
 typedef struct enc_fhs {
@@ -214,7 +213,7 @@ static int getCustosKey(char* buf, size_t bufSize) {
 
 }
 
-static int buildPath(const char* path, char* buf, size_t bufSize) {
+static int buildPath(const char* path, char* fullPath, size_t fullSize) {
 
     size_t size = 0;
     fsState_t* state = NULL;
@@ -226,8 +225,8 @@ static int buildPath(const char* path, char* buf, size_t bufSize) {
         fprintf(stderr, "ERROR buildPath: path must not be NULL\n");
         return -EINVAL;
     }
-    if(buf == NULL) {
-        fprintf(stderr, "ERROR buildPath: buf must not be NULL\n");
+    if(fullPath == NULL) {
+        fprintf(stderr, "ERROR buildPath: fullPath must not be NULL\n");
         return -EINVAL;
     }
 
@@ -240,76 +239,90 @@ static int buildPath(const char* path, char* buf, size_t bufSize) {
         return -EINVAL;
     }
 
-    /* Concatenate in Buffer */
-    size = snprintf(buf, bufSize, "%s%s", state->basePath, path);
-    if(size > (bufSize - 1)) {
+    /* Concatenate */
+    size = snprintf(fullPath, fullSize, "%s%s", state->basePath, path);
+    if(size > (fullSize - 1)) {
         fprintf(stderr, "ERROR buildPath: length too large for buffer\n");
         return -ENAMETOOLONG;
     }
 
-    fprintf(stderr, "INFO buildPath: buf = %s\n", buf);
+    fprintf(stderr, "INFO buildPath: fullPath = %s\n", fullPath);
 
     return RETURN_SUCCESS;
 
 }
 
-static int buildTempPath(const char* fullPath, char* tempPath, size_t bufSize) {
+static int buildTmpPath(const char* path, char* tmpPath, size_t tmpSize) {
 
     char* pFileName = NULL;
     char buf[PATHBUFSIZE];
     size_t length;
 
-    fprintf(stderr, "DEBUG buildTempPath called\n");
+    fprintf(stderr, "DEBUG buildTmpPath called\n");
 
     /* Input Checks */
-    if(fullPath == NULL) {
-        fprintf(stderr, "ERROR buildTempPath: fullPath must not be NULL\n");
+    if(path == NULL) {
+        fprintf(stderr, "ERROR buildTmpPath: path must not be NULL\n");
         return -EINVAL;
     }
-    if(tempPath == NULL) {
-        fprintf(stderr, "ERROR buildTempPath: tempPath must not be NULL\n");
+    if(tmpPath == NULL) {
+        fprintf(stderr, "ERROR buildTmpPath: tmpPath must not be NULL\n");
         return -EINVAL;
     }
 
-    fprintf(stderr, "INFO buildTempPath: fullPath = %s\n", fullPath);
+    fprintf(stderr, "INFO buildTmpPath: path = %s\n", path);
 
     /* Copy input path to buf */
-    length = snprintf(buf, sizeof(buf), "%s", fullPath);
+    length = snprintf(buf, sizeof(buf), "%s", path);
     if(length > (sizeof(buf) - 1)) {
-        fprintf(stderr, "ERROR buildTempPath: Overflowed buf\n");
+        fprintf(stderr, "ERROR buildTmpPath: Overflowed buf\n");
         return -ENAMETOOLONG;
     }
 
     /* Find start of file name */
     pFileName = strrchr(buf, PATHDELIMINATOR);
     if(pFileName == NULL) {
-        fprintf(stderr, "ERROR buildTempPath: Could not find deliminator in path\n");
+        fprintf(stderr, "ERROR buildTmpPath: Could not find deliminator in path\n");
         return -EINVAL;
     }
     *pFileName = NULLTERM;
 
-    /* Build Temp Path */
-    length = snprintf(tempPath, bufSize, "%s%c%s%s%s",
-                      buf, PATHDELIMINATOR, TEMPNAME_PRE, (pFileName + 1), TEMPNAME_POST);
-    if(length > (bufSize - 1)) {
-        fprintf(stderr, "ERROR buildTempPath: Overflowed tempPath\n");
+    /* Build Tmp Path */
+    length = snprintf(tmpPath, tmpSize, "%s%c%s%sXXXXXX",
+                      buf, PATHDELIMINATOR, TMPNAME_PRE, (pFileName + 1), TMPNAME_POST);
+    if(length > (tmpSize - 1)) {
+        fprintf(stderr, "ERROR buildTmpPath: Overflowed tmpPath\n");
         return -ENAMETOOLONG;
     }
 
-    fprintf(stderr, "INFO buildTempPath: tempPath = %s\n", tempPath);
+    fprintf(stderr, "INFO buildTmpPath: tmpPath = %s\n", tmpPath);
 
     return RETURN_SUCCESS;
 
 }
 
-static enc_fhs_t* createFilePair(const char* encPath, const char* clearPath,
-                                 int flags, mode_t mode) {
+static enc_fhs_t* createFilePair(const char* encPath, int flags, mode_t mode) {
 
     int ret;
+    char tmpPath[PATHBUFSIZE];
     enc_fhs_t* fhs = NULL;
 
     fprintf(stderr, "DEBUG createFilePair called\n");
 
+    /* Input Checks */
+    if(encPath == NULL) {
+        fprintf(stderr, "ERROR createFilePair: encPath must not be NULL\n");
+        return NULL;
+    }
+
+    /* Build tmpPath */
+    ret = buildTmpPath(encPath, tmpPath, sizeof(tmpPath));
+    if(ret < 0) {
+        fprintf(stderr, "ERROR createFilePair: buildTempPath() failed\n");
+        return NULL;
+    }
+
+    /* Create fhs */
     fhs = malloc(sizeof(*fhs));
     if(!fhs) {
         fprintf(stderr, "ERROR createFilePair: malloc failed\n");
@@ -317,6 +330,7 @@ static enc_fhs_t* createFilePair(const char* encPath, const char* clearPath,
         return NULL;
     }
 
+    /* Open encPath */
     ret = open(encPath, flags, mode);
     if(ret < 0) {
         fprintf(stderr, "ERROR createFilePair: open(encPath) failed\n");
@@ -325,28 +339,31 @@ static enc_fhs_t* createFilePair(const char* encPath, const char* clearPath,
     }
     fhs->encFH = ret;
 
-    ret = open(clearPath, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    /* Open tmpPath */
+    ret = mkostemp(tmpPath, O_CLOEXEC);
     if(ret < 0) {
         fprintf(stderr, "ERROR createFilePair: open(clearPath) failed\n");
         perror("ERROR createFilePair");
         return NULL;
     }
     fhs->clearFH = ret;
-    strncpy(fhs->clearPath, clearPath, PATHBUFSIZE);
+    strncpy(fhs->clearPath, tmpPath, sizeof(tmpPath));
 
+    /* Return */
     return fhs;
 
 }
 
-static enc_fhs_t* openFilePair(const char* encPath, const char* clearPath,
-                               int flags) {
+static enc_fhs_t* openFilePair(const char* encPath, int flags) {
 
     int ret;
     int newflags;
+    char tmpPath[PATHBUFSIZE];
     enc_fhs_t* fhs = NULL;
 
     fprintf(stderr, "DEBUG openFilePair called\n");
 
+    /* Upgrade O_WRONLY to O_RDWR */
     if((flags & O_WRONLY) == O_WRONLY) {
         newflags = (flags & ~O_WRONLY) | O_RDWR;
         fprintf(stderr, "INFO openFilePair: upgrading O_WRONLY to O_RDWR: %X to %X\n",
@@ -356,6 +373,14 @@ static enc_fhs_t* openFilePair(const char* encPath, const char* clearPath,
         newflags = flags;
     }
 
+    /* Build tmpPath */
+    ret = buildTmpPath(encPath, tmpPath, sizeof(tmpPath));
+    if(ret < 0) {
+        fprintf(stderr, "ERROR createFilePair: buildTempPath() failed\n");
+        return NULL;
+    }
+
+    /* Create fhs */
     fhs = malloc(sizeof(*fhs));
     if(!fhs) {
         fprintf(stderr, "ERROR openFilePair: malloc failed\n");
@@ -363,6 +388,7 @@ static enc_fhs_t* openFilePair(const char* encPath, const char* clearPath,
         return NULL;
     }
 
+    /* Open encPath */
     ret = open(encPath, newflags);
     if(ret < 0) {
         fprintf(stderr, "ERROR openFilePair: open(encPath) failed\n");
@@ -371,15 +397,17 @@ static enc_fhs_t* openFilePair(const char* encPath, const char* clearPath,
     }
     fhs->encFH = ret;
 
-    ret = open(clearPath, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    /* Open tmpPath */
+    ret = mkostemp(tmpPath, O_CLOEXEC);
     if(ret < 0) {
         fprintf(stderr, "ERROR openFilePair: open(clearPath) failed\n");
         perror("ERROR openFilePair");
         return NULL;
     }
     fhs->clearFH = ret;
-    strncpy(fhs->clearPath, clearPath, PATHBUFSIZE);
+    strncpy(fhs->clearPath, tmpPath, sizeof(tmpPath));
 
+    /* Return */
     return fhs;
 
 }
