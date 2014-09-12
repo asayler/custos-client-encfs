@@ -1,0 +1,13 @@
+# C Cruft
+*.a
+*.o
+
+# Output Files
+base64/base64
+base64/depend
+examples/c-example1
+examples/c-example2
+examples/decoded.txt
+examples/encoded.txt
+examples/depend
+src/depend
