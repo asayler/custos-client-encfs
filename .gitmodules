@@ -1,0 +1,3 @@
+[submodule "libs/libcustos"]
+	path = libs/libcustos
+	url = git@github.com:asayler/custos-client-libcustos.git
